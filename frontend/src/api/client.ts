@@ -168,7 +168,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export type AuthUser = { username: string }
 
 async function fetchCsrfToken(): Promise<string> {
-  const tokenResponse = await request<{ csrf_token: string }>('/api/v1/auth/csrf')
+  const tokenResponse = await request<{ csrf_token: string }>('/api/v1/auth/csrf', { cache: 'no-store' })
   csrfToken = tokenResponse.csrf_token
   return tokenResponse.csrf_token
 }
@@ -179,12 +179,22 @@ export async function restoreSession(): Promise<AuthUser> {
 }
 
 export async function login(username: string, password: string): Promise<AuthUser> {
-  const token = csrfToken ?? await fetchCsrfToken()
-  const result = await request<AuthUser & { csrf_token: string }>('/api/v1/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
-    body: JSON.stringify({ username, password }),
-  })
+  const submitLogin = (token: string) =>
+    request<AuthUser & { csrf_token: string }>('/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
+      body: JSON.stringify({ username, password }),
+    })
+
+  let result: AuthUser & { csrf_token: string }
+  try {
+    result = await submitLogin(await fetchCsrfToken())
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.startsWith('CSRF_VALIDATION_FAILED:')) {
+      throw error
+    }
+    result = await submitLogin(await fetchCsrfToken())
+  }
   csrfToken = result.csrf_token
   return { username: result.username }
 }

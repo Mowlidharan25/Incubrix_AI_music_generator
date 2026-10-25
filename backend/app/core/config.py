@@ -47,5 +47,11 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    @property
+    def session_cookie_samesite(self) -> Literal["lax", "strict", "none"]:
+        if self.environment == "production":
+            return "none"
+        return self.auth_cookie_samesite
+
 
 settings = Settings()

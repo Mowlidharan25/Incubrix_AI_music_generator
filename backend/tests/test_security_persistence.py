@@ -8,6 +8,7 @@ from fastapi import Request
 from fastapi.testclient import TestClient
 
 from app.api import routes
+from app.core.config import Settings
 from app.main import app
 from app.providers.mock_provider import MockMusicProvider
 from app.schemas.music import JobCreateRequest, JobError, JobStatus
@@ -122,6 +123,9 @@ def test_login_uses_signed_http_only_cookie_and_requires_csrf(
 def test_production_auth_requires_secure_cookie_and_explicit_cors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    assert Settings(environment="production", _env_file=None).session_cookie_samesite == "none"
+    assert Settings(environment="development", _env_file=None).session_cookie_samesite == "lax"
+
     configure_test_account(monkeypatch)
     monkeypatch.setattr(auth.settings, "environment", "production")
     monkeypatch.setattr(auth.settings, "auth_cookie_secure", False)

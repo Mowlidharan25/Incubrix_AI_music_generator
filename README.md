@@ -108,7 +108,7 @@ SAM processing is opt-in and disabled by default. It prompts sequentially for dr
 
 `GET /health` reports API process reachability. `GET /ready` reports generic auth, job database, provider-credential, and local storage readiness without returning the provider name, configuration variable names, or secrets. Provider connection and available credits are not checked by readiness.
 
-The frontend signs in through an HTTP-only signed session cookie and sends a CSRF token for state-changing requests. There is no public registration, user-management, or password-reset flow. Rotate `AUTH_SESSION_SECRET` to invalidate all current sessions. Use the frontend and API on a same-site HTTPS origin for production; if they are cross-site, configure `AUTH_COOKIE_SAMESITE=none` together with `AUTH_COOKIE_SECURE=true` and the exact frontend origin.
+The frontend signs in through an HTTP-only signed session cookie and sends a CSRF token for state-changing requests. There is no public registration, user-management, or password-reset flow. Rotate `AUTH_SESSION_SECRET` to invalidate all current sessions. Production uses `SameSite=None` and therefore requires `AUTH_COOKIE_SECURE=true`; this allows credentialed requests when the frontend and API are on different sites. Keep `CORS_ORIGINS` restricted to the exact frontend origin.
 
 ## API endpoints
 

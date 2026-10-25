@@ -192,7 +192,7 @@ app.add_middleware(
     secret_key=settings.auth_session_secret or secrets.token_urlsafe(32),
     session_cookie="incubrix_session",
     max_age=60 * 60 * 12,
-    same_site=settings.auth_cookie_samesite,
+    same_site=settings.session_cookie_samesite,
     https_only=settings.auth_cookie_secure,
 )
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
