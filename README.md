@@ -71,7 +71,7 @@ Copy-Item .env.example .env
 npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
-Open `http://127.0.0.1:5173`. The frontend example configures `VITE_API_BASE_URL=http://127.0.0.1:8000`, matching the backend's bind address; change this public URL in `frontend/.env` when the API runs elsewhere. Vite environment variables are public and must never contain the provider key. After changing frontend `.env`, restart Vite.
+Open `http://127.0.0.1:5173`. The frontend example configures `VITE_API_BASE_URL=http://127.0.0.1:8000`, matching the backend's bind address; change this public URL in `frontend/.env` when using a different API during development. Production builds use `https://incubrix-ai-music-api.onrender.com` and ignore stale `VITE_API_BASE_URL` values. Vite environment variables are public and must never contain the provider key. After changing frontend `.env`, restart Vite.
 
 The workspace also has a VS Code full-stack launch option: **Run and Debug → IncuBrix: Start full stack**.
 
