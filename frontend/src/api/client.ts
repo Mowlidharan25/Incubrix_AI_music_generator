@@ -128,7 +128,7 @@ type ApiErrorResponse = {
   }
 }
 
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL?.trim() || 'http://127.0.0.1:8000').replace(/\/+$/, '')
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL?.trim() || 'https://incubrix-ai-music-api.onrender.com').replace(/\/+$/, '')
 let csrfToken: string | null = null
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
