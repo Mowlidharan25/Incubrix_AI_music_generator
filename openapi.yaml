@@ -1,0 +1,855 @@
+openapi: 3.1.0
+info:
+  title: IncuBrix AI Music Studio API
+  description: Creates music-generation jobs using the configured provider, validates
+    and stores generated audio locally, and exposes download links only after success.
+    Job state is in-memory; duration, arrangement, loopability, and mastering targets
+    are reported honestly and are not guaranteed by this API.
+  version: 0.2.0
+paths:
+  /api/v1/provider:
+    get:
+      summary: Get Provider Config
+      operationId: getProviderConfig
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                title: Response Getproviderconfig
+    post:
+      summary: Update Provider Config
+      operationId: updateProviderConfig
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderConfigRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                title: Response Updateproviderconfig
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/jobs:
+    get:
+      summary: List Jobs
+      operationId: listRecentJobs
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/JobResponse'
+                title: Response Listrecentjobs
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/jobs/{job_id}:
+    get:
+      summary: Get Job
+      operationId: getJobStatus
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/jobs/{job_id}/audio:
+    get:
+      summary: Download Job Audio
+      operationId: downloadJobAudio
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/jobs/{job_id}/stems/{stem_id}:
+    get:
+      summary: Download Job Stem
+      operationId: downloadJobStem
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      - name: stem_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Stem Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/jobs/{job_id}/manifest:
+    get:
+      summary: Get Job Manifest
+      operationId: getJobManifest
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/jobs/{job_id}/narration:
+    post:
+      summary: Create Narration Mix
+      operationId: createNarrationMix
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NarrationMixResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      summary: Get Narration Mix
+      operationId: getNarrationMix
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NarrationMixResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/jobs/{job_id}/narration/audio:
+    get:
+      summary: Download Narration Mix
+      operationId: downloadNarrationMix
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/music/jobs:
+    post:
+      summary: Create Music Job
+      operationId: createMusicJob
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Idempotency-Key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobCreateRequest'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobAccepted'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /health:
+    get:
+      tags:
+      - system
+      summary: Check that the API process is alive
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                type: object
+                title: Response Healthcheck
+  /ready:
+    get:
+      tags:
+      - system
+      summary: Check API dependency readiness
+      operationId: readinessCheck
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                title: Response Readinesscheck
+components:
+  schemas:
+    AudioResult:
+      properties:
+        provider:
+          type: string
+          title: Provider
+        model:
+          type: string
+          title: Model
+        format:
+          type: string
+          title: Format
+        requested_duration_s:
+          type: number
+          title: Requested Duration S
+        requested_sample_rate:
+          type: integer
+          title: Requested Sample Rate
+        target_integrated_lufs:
+          type: number
+          title: Target Integrated Lufs
+        true_peak_ceiling_dbtp:
+          type: number
+          title: True Peak Ceiling Dbtp
+        sample_rate:
+          type: integer
+          title: Sample Rate
+        channel_count:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Channel Count
+        duration_s:
+          type: number
+          title: Duration S
+        size_bytes:
+          type: integer
+          title: Size Bytes
+        integrated_lufs:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Integrated Lufs
+        true_peak_dbtp:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: True Peak Dbtp
+        is_ai_generated:
+          type: boolean
+          title: Is Ai Generated
+        download_url:
+          type: string
+          title: Download Url
+        mix_ducked_download_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Mix Ducked Download Url
+        manifest_download_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Manifest Download Url
+        loop_validation:
+          $ref: '#/components/schemas/LoopValidation'
+        stem_processing:
+          $ref: '#/components/schemas/StemProcessingResult'
+        generation_started_at:
+          type: string
+          format: date-time
+          title: Generation Started At
+        generation_completed_at:
+          type: string
+          format: date-time
+          title: Generation Completed At
+        processing_duration_s:
+          type: number
+          minimum: 0.0
+          title: Processing Duration S
+      type: object
+      required:
+      - provider
+      - model
+      - format
+      - requested_duration_s
+      - requested_sample_rate
+      - target_integrated_lufs
+      - true_peak_ceiling_dbtp
+      - sample_rate
+      - duration_s
+      - size_bytes
+      - is_ai_generated
+      - download_url
+      - generation_started_at
+      - generation_completed_at
+      - processing_duration_s
+      title: AudioResult
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    JobAccepted:
+      properties:
+        job_id:
+          type: string
+          title: Job Id
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        progress:
+          type: integer
+          title: Progress
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - job_id
+      - status
+      - progress
+      - created_at
+      - updated_at
+      - message
+      title: JobAccepted
+    JobCreateRequest:
+      properties:
+        prompt:
+          type: string
+          maxLength: 2000
+          minLength: 1
+          title: Prompt
+        duration_s:
+          type: number
+          maximum: 300.0
+          minimum: 5.0
+          title: Duration S
+        sections:
+          items:
+            $ref: '#/components/schemas/MusicSection'
+          type: array
+          maxItems: 32
+          title: Sections
+        tempo_bpm:
+          anyOf:
+          - type: integer
+            maximum: 240.0
+            minimum: 40.0
+          - type: 'null'
+          title: Tempo Bpm
+        key:
+          anyOf:
+          - type: string
+            maxLength: 8
+          - type: 'null'
+          title: Key
+        loopable:
+          type: boolean
+          title: Loopable
+          default: false
+        narration_url:
+          anyOf:
+          - type: string
+            maxLength: 2083
+            minLength: 1
+            format: uri
+          - type: 'null'
+          title: Narration Url
+        callback_url:
+          anyOf:
+          - type: string
+            maxLength: 2083
+            minLength: 1
+            format: uri
+          - type: 'null'
+          title: Callback Url
+        separate_stems:
+          type: boolean
+          title: Separate Stems
+          default: false
+        seed:
+          anyOf:
+          - type: integer
+            maximum: 2147483647.0
+            minimum: 0.0
+          - type: 'null'
+          title: Seed
+        output:
+          $ref: '#/components/schemas/MusicOutputConfig'
+      additionalProperties: false
+      type: object
+      required:
+      - prompt
+      - duration_s
+      title: JobCreateRequest
+    JobError:
+      properties:
+        code:
+          type: string
+          title: Code
+        message:
+          type: string
+          title: Message
+        retryable:
+          type: boolean
+          title: Retryable
+        details:
+          type: object
+          title: Details
+      type: object
+      required:
+      - code
+      - message
+      - retryable
+      title: JobError
+    JobResponse:
+      properties:
+        job_id:
+          type: string
+          title: Job Id
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        progress:
+          type: integer
+          maximum: 100.0
+          minimum: 0.0
+          title: Progress
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+        error:
+          anyOf:
+          - $ref: '#/components/schemas/JobError'
+          - type: 'null'
+        result:
+          anyOf:
+          - $ref: '#/components/schemas/AudioResult'
+          - type: 'null'
+        warnings:
+          items:
+            type: string
+          type: array
+          title: Warnings
+        prompt:
+          type: string
+          title: Prompt
+        duration_s:
+          type: number
+          title: Duration S
+      type: object
+      required:
+      - job_id
+      - status
+      - progress
+      - created_at
+      - updated_at
+      - prompt
+      - duration_s
+      title: JobResponse
+    JobStatus:
+      type: string
+      enum:
+      - queued
+      - running
+      - succeeded
+      - failed
+      title: JobStatus
+    LoopValidation:
+      properties:
+        status:
+          type: string
+          enum:
+          - not_requested
+          - passed
+          - failed
+          title: Status
+        crossfade_duration_s:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Crossfade Duration S
+        endpoint_discontinuity_dbfs:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Endpoint Discontinuity Dbfs
+        note:
+          type: string
+          title: Note
+      type: object
+      required:
+      - status
+      - note
+      title: LoopValidation
+    MusicOutputConfig:
+      properties:
+        sample_rate:
+          type: integer
+          const: 48000
+          title: Sample Rate
+          default: 48000
+        target_lufs:
+          type: number
+          maximum: -4.0
+          minimum: -30.0
+          title: Target Lufs
+          default: -16.0
+        formats:
+          items:
+            $ref: '#/components/schemas/OutputFormat'
+          type: array
+          minItems: 1
+          title: Formats
+      additionalProperties: false
+      type: object
+      title: MusicOutputConfig
+    MusicSection:
+      properties:
+        start_s:
+          type: number
+          maximum: 300.0
+          minimum: 0.0
+          title: Start S
+        mood:
+          type: string
+          maxLength: 80
+          minLength: 1
+          title: Mood
+      additionalProperties: false
+      type: object
+      required:
+      - start_s
+      - mood
+      title: MusicSection
+    NarrationMixResponse:
+      properties:
+        job_id:
+          type: string
+          title: Job Id
+        format:
+          type: string
+          title: Format
+        duration_s:
+          type: number
+          title: Duration S
+        sample_rate:
+          type: integer
+          title: Sample Rate
+        channel_count:
+          type: integer
+          title: Channel Count
+        size_bytes:
+          type: integer
+          title: Size Bytes
+        duck_attenuation_db:
+          type: number
+          title: Duck Attenuation Db
+        integrated_lufs:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Integrated Lufs
+        true_peak_dbtp:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: True Peak Dbtp
+        download_url:
+          type: string
+          title: Download Url
+        warnings:
+          items:
+            type: string
+          type: array
+          title: Warnings
+      type: object
+      required:
+      - job_id
+      - format
+      - duration_s
+      - sample_rate
+      - channel_count
+      - size_bytes
+      - duck_attenuation_db
+      - download_url
+      title: NarrationMixResponse
+    OutputFormat:
+      type: string
+      enum:
+      - wav
+      - mp3
+      title: OutputFormat
+    ProviderConfigRequest:
+      properties:
+        provider:
+          type: string
+          enum:
+          - stability
+          - elevenlabs
+          - mock
+          title: Provider
+      additionalProperties: false
+      type: object
+      required:
+      - provider
+      title: ProviderConfigRequest
+    StemArtifact:
+      properties:
+        stem_id:
+          type: string
+          title: Stem Id
+        label:
+          type: string
+          title: Label
+        prompt:
+          type: string
+          title: Prompt
+        format:
+          type: string
+          const: wav
+          title: Format
+        duration_s:
+          type: number
+          title: Duration S
+        sample_rate:
+          type: integer
+          title: Sample Rate
+        channel_count:
+          type: integer
+          title: Channel Count
+        size_bytes:
+          type: integer
+          title: Size Bytes
+        file_name:
+          type: string
+          title: File Name
+        gain_linear:
+          type: number
+          title: Gain Linear
+        gain_db:
+          type: number
+          title: Gain Db
+        download_url:
+          type: string
+          title: Download Url
+      type: object
+      required:
+      - stem_id
+      - label
+      - prompt
+      - format
+      - duration_s
+      - sample_rate
+      - channel_count
+      - size_bytes
+      - file_name
+      - gain_linear
+      - gain_db
+      - download_url
+      title: StemArtifact
+    StemProcessingResult:
+      properties:
+        status:
+          type: string
+          enum:
+          - not_requested
+          - available
+          - unavailable
+          - failed
+          title: Status
+        error:
+          anyOf:
+          - $ref: '#/components/schemas/JobError'
+          - type: 'null'
+        model_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Id
+        model_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Version
+        method:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Method
+        stems:
+          items:
+            $ref: '#/components/schemas/StemArtifact'
+          type: array
+          title: Stems
+        reconstruction_relative_error_db:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Reconstruction Relative Error Db
+        reconstruction_metric:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reconstruction Metric
+        reconstruction_note:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reconstruction Note
+      type: object
+      required:
+      - status
+      title: StemProcessingResult
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError

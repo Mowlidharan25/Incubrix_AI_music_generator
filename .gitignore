@@ -1,0 +1,34 @@
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# Python
+.venv/
+**/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# JavaScript
+node_modules/
+**/node_modules/
+dist/
+coverage/
+
+# Local runtime output
+/backend/generated_audio/
+/generated_audio/
+/batch_results*/
+/*.wav
+/*.mp3
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+*.log
+*.tmp

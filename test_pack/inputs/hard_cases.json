@@ -1,0 +1,45 @@
+[
+  {
+    "name": "hard_01_very_short_5s",
+    "prompt": "Fast dynamic percussion hit and rising swell for video transition stinger",
+    "duration_s": 5.0,
+    "output": {"sample_rate": 48000, "target_lufs": -16, "formats": ["wav"]}
+  },
+  {
+    "name": "hard_02_long_300s",
+    "prompt": "Continuous ambient generative drone with subtle chord shifts for 5-minute documentary background",
+    "duration_s": 300.0,
+    "tempo_bpm": 70,
+    "loopable": true,
+    "output": {"sample_rate": 48000, "target_lufs": -18, "formats": ["wav"]}
+  },
+  {
+    "name": "hard_03_contradictory_prompt",
+    "prompt": "calm but aggressive, serene peaceful melody with violent heavy distorted percussion",
+    "duration_s": 20.0,
+    "output": {"sample_rate": 48000, "target_lufs": -16, "formats": ["wav"]}
+  },
+  {
+    "name": "hard_04_artist_name_and_vocals_request",
+    "prompt": "In the style of Hans Zimmer Time with singing choir vocals and female vocal lead",
+    "duration_s": 30.0,
+    "output": {"sample_rate": 48000, "target_lufs": -16, "formats": ["wav"]}
+  },
+  {
+    "name": "hard_05_non_english_prompt",
+    "prompt": "Musique acoustique entraînante et joyeuse pour présentation d'entreprise, guitare et piano",
+    "duration_s": 25.0,
+    "output": {"sample_rate": 48000, "target_lufs": -16, "formats": ["wav"]}
+  },
+  {
+    "name": "hard_06_close_sections",
+    "prompt": "Rapid dramatic transitions with sudden mood shifts",
+    "duration_s": 15.0,
+    "sections": [
+      {"start_s": 0.0, "mood": "calm whisper"},
+      {"start_s": 1.2, "mood": "sudden loud crash"},
+      {"start_s": 2.5, "mood": "eerie silence"}
+    ],
+    "output": {"sample_rate": 48000, "target_lufs": -16, "formats": ["wav"]}
+  }
+]

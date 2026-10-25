@@ -1,0 +1,72 @@
+services:
+  object-store:
+    image: chrislusf/seaweedfs:4.50@sha256:c2658820e763294a9e9de7b36c81e59b879e3459148351aee4e31a126ca64860
+    entrypoint:
+      - /bin/sh
+      - /usr/local/bin/seaweedfs-entrypoint.sh
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?Set S3_ACCESS_KEY in the local .env file}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?Set S3_SECRET_KEY in the local .env file}
+    ports:
+      - "127.0.0.1:9000:8333"
+      - "127.0.0.1:9001:12535"
+    volumes:
+      - seaweedfs_data:/data
+      - minio_data:/legacy-minio-data:ro
+      - ./scripts/seaweedfs-entrypoint.sh:/usr/local/bin/seaweedfs-entrypoint.sh:ro
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -fsS
+        - http://127.0.0.1:8333/healthz
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  backend:
+    build:
+      context: ./backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      APP_NAME: "IncuBrix AI Music Studio"
+      ENVIRONMENT: "development"
+      S3_ENDPOINT_URL: "http://object-store:8333"
+      S3_BUCKET_NAME: "incubrix-audio"
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?Set S3_ACCESS_KEY in the local .env file}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?Set S3_SECRET_KEY in the local .env file}
+    volumes:
+      - ./backend:/app
+    depends_on:
+      object-store:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -lc "npm ci && npm run dev -- --host 0.0.0.0 --port 5173"
+    ports:
+      - "127.0.0.1:5173:5173"
+    volumes:
+      - ./frontend:/app
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  minio_data:
+  seaweedfs_data:

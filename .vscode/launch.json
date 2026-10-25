@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "IncuBrix: Start full stack",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://127.0.0.1:5173",
+      "webRoot": "${workspaceFolder}/frontend/src",
+      "preLaunchTask": "IncuBrix: Start backend and frontend"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+This project is being built step by step for the IncuBrix AI music studio.
+We started by checking the workspace, setting up the frontend and backend, and creating the basic structure.
+We are now building the app carefully with a clean and simple setup.
+The sample file is just being updated as progress continues.

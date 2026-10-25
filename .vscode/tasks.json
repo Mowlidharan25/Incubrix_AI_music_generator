@@ -1,0 +1,85 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "IncuBrix: Start backend",
+      "type": "process",
+      "command": "${workspaceFolder}\\backend\\.venv\\Scripts\\python.exe",
+      "args": [
+        "-m",
+        "uvicorn",
+        "app.main:app",
+        "--reload",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}\\backend"
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "incubrix-backend",
+        "pattern": {
+          "regexp": "^(.*)$",
+          "message": 1
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*",
+          "endsPattern": "^INFO: +Uvicorn running on http://127\\.0\\.0\\.1:8000.*$"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": false
+      }
+    },
+    {
+      "label": "IncuBrix: Start frontend",
+      "type": "process",
+      "command": "npm",
+      "args": [
+        "run",
+        "dev",
+        "--",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "5173"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}\\frontend"
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "incubrix-frontend",
+        "pattern": {
+          "regexp": "^(.*)$",
+          "message": 1
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*",
+          "endsPattern": "^\\s*Local: +http://127\\.0\\.0\\.1:5173/?\\s*$"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": false
+      }
+    },
+    {
+      "label": "IncuBrix: Start backend and frontend",
+      "dependsOn": [
+        "IncuBrix: Start backend",
+        "IncuBrix: Start frontend"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    }
+  ]
+}

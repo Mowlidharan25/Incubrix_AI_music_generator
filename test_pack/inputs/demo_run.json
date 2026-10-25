@@ -1,0 +1,15 @@
+[
+  {
+    "name": "product_launch_demo",
+    "prompt": "Warm optimistic acoustic pop for a product launch, builds to an uplifting finish",
+    "duration_s": 15.0,
+    "sections": [
+      {"start_s": 0.0, "mood": "calm intro"},
+      {"start_s": 7.5, "mood": "uplifting build"}
+    ],
+    "tempo_bpm": 120,
+    "key": "C",
+    "loopable": true,
+    "output": {"sample_rate": 48000, "target_lufs": -16, "formats": ["wav"]}
+  }
+]

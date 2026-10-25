@@ -1,0 +1,104 @@
+[
+  {
+    "name": "01_cinematic_epic",
+    "prompt": "Cinematic orchestral score with soaring brass, dramatic timpani, and sweeping strings, builds to an epic climax",
+    "duration_s": 45.0,
+    "sections": [
+      {"start_s": 0.0, "mood": "quiet anticipation with cellos"},
+      {"start_s": 15.0, "mood": "horns and percussion enter building tension"},
+      {"start_s": 30.0, "mood": "full orchestra grand finale"}
+    ],
+    "tempo_bpm": 110,
+    "key": "Dm",
+    "loopable": false,
+    "output": {"sample_rate": 48000, "target_lufs": -16, "formats": ["wav"]}
+  },
+  {
+    "name": "02_lofi_study_beats",
+    "prompt": "Relaxing lo-fi hip hop beat with dusty vinyl crackle, gentle electric piano chords, and mellow bassline",
+    "duration_s": 30.0,
+    "tempo_bpm": 80,
+    "key": "Eb",
+    "loopable": true,
+    "output": {"sample_rate": 48000, "target_lufs": -16, "formats": ["wav"]}
+  },
+  {
+    "name": "03_corporate_explainer",
+    "prompt": "Upbeat, clean corporate tech explainer music with acoustic guitar, bright piano, and crisp modern beat",
+    "duration_s": 60.0,
+    "sections": [
+      {"start_s": 0.0, "mood": "minimal clean intro"},
+      {"start_s": 20.0, "mood": "optimistic melody enters with soft claps"},
+      {"start_s": 45.0, "mood": "inspiring crescendo and resolved finish"}
+    ],
+    "tempo_bpm": 120,
+    "key": "C",
+    "loopable": false,
+    "output": {"sample_rate": 48000, "target_lufs": -16, "formats": ["wav"]}
+  },
+  {
+    "name": "04_electronic_synthwave",
+    "prompt": "Energetic 80s synthwave retro electro with punchy synthesizer bass, gated reverb drums, and neon lead arp",
+    "duration_s": 40.0,
+    "tempo_bpm": 128,
+    "key": "Am",
+    "loopable": true,
+    "output": {"sample_rate": 48000, "target_lufs": -16, "formats": ["wav"]}
+  },
+  {
+    "name": "05_tense_thriller",
+    "prompt": "Dark tense investigative thriller underscore with pulsating low synth, clock ticking sound, and eerie high textures",
+    "duration_s": 45.0,
+    "tempo_bpm": 90,
+    "key": "Fm",
+    "loopable": false,
+    "output": {"sample_rate": 48000, "target_lufs": -18, "formats": ["wav"]}
+  },
+  {
+    "name": "06_playful_acoustic",
+    "prompt": "Playful, lighthearted acoustic background music with pizzicato strings, cheerful ukulele, and whistling melody",
+    "duration_s": 25.0,
+    "sections": [
+      {"start_s": 0.0, "mood": "curious and quirky ukulele strum"},
+      {"start_s": 10.0, "mood": "bouncy percussion and bells join"}
+    ],
+    "tempo_bpm": 115,
+    "key": "G",
+    "loopable": false,
+    "output": {"sample_rate": 48000, "target_lufs": -16, "formats": ["wav"]}
+  },
+  {
+    "name": "07_ambient_meditation",
+    "prompt": "Peaceful ambient soundscape with lush evolving warm pads, gentle singing bowls, and deep calm resonance",
+    "duration_s": 60.0,
+    "loopable": true,
+    "output": {"sample_rate": 48000, "target_lufs": -20, "formats": ["wav"]}
+  },
+  {
+    "name": "08_energetic_indie_rock",
+    "prompt": "Driving indie rock instrumental with rhythmic electric rhythm guitar, punchy acoustic drums, and driving bassline",
+    "duration_s": 50.0,
+    "tempo_bpm": 135,
+    "key": "E",
+    "loopable": false,
+    "output": {"sample_rate": 48000, "target_lufs": -14, "formats": ["wav"]}
+  },
+  {
+    "name": "09_smooth_jazz_cafe",
+    "prompt": "Warm late-night smooth jazz quartet with upright acoustic bass, brushed drums, and mellow Rhodes piano chords",
+    "duration_s": 35.0,
+    "tempo_bpm": 85,
+    "key": "Bb",
+    "loopable": true,
+    "output": {"sample_rate": 48000, "target_lufs": -16, "formats": ["wav"]}
+  },
+  {
+    "name": "10_modern_trap_hiphop",
+    "prompt": "Modern bouncy trap instrumental beat with rolling hi-hats, punchy sub 808 bass, and atmospheric flute chops",
+    "duration_s": 45.0,
+    "tempo_bpm": 140,
+    "key": "Gm",
+    "loopable": false,
+    "output": {"sample_rate": 48000, "target_lufs": -14, "formats": ["wav"]}
+  }
+]
