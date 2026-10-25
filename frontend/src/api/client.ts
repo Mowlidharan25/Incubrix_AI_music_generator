@@ -129,11 +129,20 @@ type ApiErrorResponse = {
 }
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL?.trim() || 'http://127.0.0.1:8000').replace(/\/+$/, '')
+let csrfToken: string | null = null
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response
+  const headers = new Headers(init?.headers)
+  if (init?.method && !['GET', 'HEAD', 'OPTIONS'].includes(init.method.toUpperCase()) && csrfToken) {
+    headers.set('X-CSRF-Token', csrfToken)
+  }
   try {
-    response = await fetch(`${apiBaseUrl}${path}`, init)
+    response = await fetch(`${apiBaseUrl}${path}`, {
+      ...init,
+      headers,
+      credentials: 'include',
+    })
   } catch {
     throw new Error(`Cannot reach the API at ${apiBaseUrl}. Check that the backend is running.`)
   }
@@ -150,6 +159,35 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return (await response.json()) as T
+}
+
+export type AuthUser = { username: string }
+
+async function fetchCsrfToken(): Promise<string> {
+  const tokenResponse = await request<{ csrf_token: string }>('/api/v1/auth/csrf')
+  csrfToken = tokenResponse.csrf_token
+  return tokenResponse.csrf_token
+}
+
+export async function restoreSession(): Promise<AuthUser> {
+  await fetchCsrfToken()
+  return request<AuthUser>('/api/v1/auth/me')
+}
+
+export async function login(username: string, password: string): Promise<AuthUser> {
+  const token = csrfToken ?? await fetchCsrfToken()
+  const result = await request<AuthUser & { csrf_token: string }>('/api/v1/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
+    body: JSON.stringify({ username, password }),
+  })
+  csrfToken = result.csrf_token
+  return { username: result.username }
+}
+
+export async function logout(): Promise<void> {
+  await request<{ status: string }>('/api/v1/auth/logout', { method: 'POST' })
+  csrfToken = null
 }
 
 export function createMusicJob(payload: MusicJobRequest): Promise<JobAcceptedResponse> {

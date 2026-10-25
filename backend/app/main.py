@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import logging
 import re
+import secrets
+import sqlite3
 import time
 from uuid import uuid4
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -17,10 +20,11 @@ from app.api.exception_handlers import (
     internal_exception_handler,
     validation_exception_handler,
 )
-from app.api.routes import job_manager as music_job_manager
+from app.api.routes import audio_storage, job_manager as music_job_manager
 from app.api.routes import router as api_router
 from app.core.config import settings
 from app.core.logging_config import configure_logging
+from app.services.auth import auth_configuration_ready, router as auth_router
 from app.services.job_store import job_store
 
 configure_logging()
@@ -61,6 +65,12 @@ class RequestObservabilityMiddleware:
                 message["headers"].append(
                     (b"x-correlation-id", correlation_id.encode("ascii"))
                 )
+                if scope.get("path", "").startswith("/api/v1/") and not any(
+                    name.lower() == b"cache-control" for name, _ in message["headers"]
+                ):
+                    message["headers"].append((b"cache-control", b"no-store"))
+                if not any(name.lower() == b"x-content-type-options" for name, _ in message["headers"]):
+                    message["headers"].append((b"x-content-type-options", b"nosniff"))
             await send(message)
 
         if is_narration_upload:
@@ -160,7 +170,7 @@ app = FastAPI(
     description=(
         "Creates music-generation jobs using the configured provider, validates and "
         "stores generated audio locally, and exposes download links only after success. "
-        "Job state is in-memory; duration, arrangement, loopability, and mastering "
+        "Jobs use single-host SQLite persistence; duration, arrangement, loopability, and mastering "
         "targets are reported honestly and are not guaranteed by this API."
     ),
 )
@@ -170,16 +180,25 @@ app.add_middleware(
     allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Idempotency-Key", "X-Correlation-Id"],
+    allow_headers=["Content-Type", "Idempotency-Key", "X-Correlation-Id", "X-CSRF-Token"],
     expose_headers=["X-Correlation-Id"],
 )
 app.add_middleware(
     RequestObservabilityMiddleware,
     max_request_bytes=settings.max_request_bytes,
 )
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.auth_session_secret or secrets.token_urlsafe(32),
+    session_cookie="incubrix_session",
+    max_age=60 * 60 * 12,
+    same_site=settings.auth_cookie_samesite,
+    https_only=settings.auth_cookie_secure,
+)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 app.add_exception_handler(Exception, internal_exception_handler)
+app.include_router(auth_router, prefix="/api/v1")
 app.include_router(api_router, prefix="/api/v1")
 
 
@@ -200,27 +219,34 @@ def health() -> dict[str, str]:
     operation_id="readinessCheck",
 )
 def ready() -> dict[str, object]:
-    store_ready = job_store.check_ready()
+    try:
+        store_ready = job_store.check_ready()
+    except (sqlite3.Error, OSError):
+        logger.exception("Persistent job storage readiness check failed")
+        store_ready = False
+    storage_ready = audio_storage.check_ready()
     provider_ready = music_job_manager.provider.is_configured()
-    ready_status = store_ready and provider_ready
+    authentication_ready = auth_configuration_ready()
+    ready_status = store_ready and storage_ready and provider_ready and authentication_ready
     return {
         "status": "ready" if ready_status else "not_ready",
         "dependencies": {
             "job_store": {
                 "status": "ready" if store_ready else "unavailable",
-                "type": "in-memory",
-                "persistent": False,
+                "type": "sqlite",
+                "persistent": True,
             },
             "audio_generation": {
                 "status": "configured" if provider_ready else "not_configured",
-                "provider": music_job_manager.provider.name,
-                "required_environment_variable": (
-                    "STABILITY_API_KEY"
-                    if music_job_manager.provider.name == "stability"
-                    else "ELEVENLABS_API_KEY"
-                ),
                 "credentials_configured": provider_ready,
                 "provider_connection": "not_checked",
+            },
+            "audio_storage": {
+                "status": "ready" if storage_ready else "unavailable",
+                "type": "local_path",
+            },
+            "authentication": {
+                "status": "configured" if authentication_ready else "not_configured",
             },
         },
     }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import {
   AudioLines,
   BookOpen,
@@ -31,7 +31,10 @@ import {
   getJobManifest,
   getProviderConfig,
   getRecentJobs,
+  login,
+  logout,
   musicApiBaseUrl,
+  restoreSession,
   updateProviderConfig,
   type JobStatusResponse,
   type MusicJobRequest,
@@ -153,6 +156,11 @@ const statusLabels: Record<JobStatusResponse['status'], string> = {
 }
 
 export function App() {
+  const [authenticated, setAuthenticated] = useState(false)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [authUsername, setAuthUsername] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [authError, setAuthError] = useState('')
   const [activeView, setActiveView] = useState<ViewId>('studio')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -214,8 +222,53 @@ export function App() {
     setToast({ id: Date.now(), kind, message })
   }, [])
 
+  useEffect(() => {
+    let active = true
+    void restoreSession()
+      .then((user) => {
+        if (active) {
+          setAuthUsername(user.username)
+          setAuthenticated(true)
+        }
+      })
+      .catch(() => {
+        if (active) setAuthenticated(false)
+      })
+      .finally(() => {
+        if (active) setAuthLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setAuthError('')
+    try {
+      const user = await login(authUsername, authPassword)
+      setAuthUsername(user.username)
+      setAuthPassword('')
+      setAuthenticated(true)
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : 'Sign-in failed.')
+    }
+  }
+
+  const handleLogout = async () => {
+    try {
+      await logout()
+      setAuthenticated(false)
+      setJobs([])
+      setProviderConfig(null)
+    } catch (err) {
+      notify('error', err instanceof Error ? err.message : 'Sign-out failed.')
+    }
+  }
+
   // Refresh Provider Config
   const refreshProvider = useCallback(async () => {
+    if (!authenticated) return
     try {
       const config = await getProviderConfig()
       setProviderConfig(config)
@@ -223,10 +276,14 @@ export function App() {
     } catch (err) {
       setProviderError(err instanceof Error ? err.message : 'Provider status could not be loaded.')
     }
-  }, [])
+  }, [authenticated])
 
   // Refresh Jobs & Health
   const refreshJobs = useCallback(async (manual = false) => {
+    if (!authenticated) {
+      setJobsLoading(false)
+      return
+    }
     if (manual) setRefreshingJobs(true)
     try {
       const data = await getRecentJobs(50)
@@ -253,7 +310,7 @@ export function App() {
       setJobsLoading(false)
       if (manual) setRefreshingJobs(false)
     }
-  }, [notify])
+  }, [authenticated, notify])
 
   const checkConnection = useCallback(async () => {
     try {
@@ -432,6 +489,7 @@ export function App() {
 
     const fullUrl = url.startsWith('http') ? url : `${musicApiBaseUrl}${url}`
     const audio = new Audio(fullUrl)
+    audio.crossOrigin = 'use-credentials'
     audioRef.current = audio
 
     audio.ontimeupdate = () => {
@@ -570,6 +628,46 @@ export function App() {
     })
   }
 
+  if (authLoading) {
+    return <main className="auth-screen" aria-live="polite">Checking secure session…</main>
+  }
+
+  if (!authenticated) {
+    return (
+      <main className="auth-screen">
+        <form className="auth-card" onSubmit={handleLogin}>
+          <div className="brand-mark"><Sparkles size={20} /></div>
+          <p className="field-label">PRIVATE WORKSPACE</p>
+          <h1>Sign in to IncuBrix</h1>
+          <p>Your generation history and audio files are private to this account.</p>
+          <label>
+            Username
+            <input
+              autoComplete="username"
+              value={authUsername}
+              onChange={(event) => setAuthUsername(event.target.value)}
+              required
+              maxLength={64}
+            />
+          </label>
+          <label>
+            Password
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={authPassword}
+              onChange={(event) => setAuthPassword(event.target.value)}
+              required
+              maxLength={1024}
+            />
+          </label>
+          {authError && <p className="auth-error" role="alert">{authError}</p>}
+          <button className="btn-primary" type="submit">Sign in</button>
+        </form>
+      </main>
+    )
+  }
+
   return (
     <div
       className={`studio-shell ${sidebarCollapsed ? 'sidebar-is-collapsed' : ''} ${mobileMenuOpen ? 'mobile-menu-open' : ''}`}
@@ -705,6 +803,9 @@ export function App() {
                 <span>Mock Preview</span>
               </button>
             </div>
+            <button className="btn-action" type="button" onClick={() => void handleLogout()}>
+              Sign out
+            </button>
 
             <button
               className="btn-action"
@@ -1448,7 +1549,7 @@ export function App() {
                     <div className="mix-result-card">
                       <div className="mix-result-heading"><CheckCircle2 size={18} /><strong>Voiceover mix is ready</strong></div>
                       <p className="mix-result-meta">{narrationMix.duration_s.toFixed(1)} sec · {narrationMix.sample_rate / 1000} kHz · music ducked by {narrationMix.duck_attenuation_db.toFixed(1)} dB</p>
-                      <audio controls preload="metadata" src={`${musicApiBaseUrl}${narrationMix.download_url}`}>Your browser does not support audio playback.</audio>
+                      <audio controls crossOrigin="use-credentials" preload="metadata" src={`${musicApiBaseUrl}${narrationMix.download_url}`}>Your browser does not support audio playback.</audio>
                       {narrationMix.warnings.length > 0 && <div className="mix-warnings">{narrationMix.warnings.map((warning) => <span key={warning}>{warning}</span>)}</div>}
                       <a
                         href={`${musicApiBaseUrl}${narrationMix.download_url}`}
@@ -1473,7 +1574,7 @@ export function App() {
                   {narrationMusicJob?.result ? (
                     <div className="audio-source-card">
                       <div className="audio-source-heading"><span className="source-icon source-music"><Music2 size={15} /></span><div><strong>Background music</strong><span>{narrationMusicJob.duration_s}s · {narrationMusicJob.result.format.toUpperCase()} · {narrationMusicJob.prompt.slice(0, 64)}</span></div></div>
-                      <audio controls preload="metadata" src={`${musicApiBaseUrl}${narrationMusicJob.result.download_url}`}>Your browser does not support audio playback.</audio>
+                      <audio controls crossOrigin="use-credentials" preload="metadata" src={`${musicApiBaseUrl}${narrationMusicJob.result.download_url}`}>Your browser does not support audio playback.</audio>
                     </div>
                   ) : (
                     <div className="stems-empty"><p>Choose a completed track to preview the music source.</p><span>Only successfully generated tracks are available for mixing.</span></div>

@@ -92,16 +92,15 @@ def test_health_and_readiness_endpoints() -> None:
     assert ready.status_code == 200
     assert ready.json()["dependencies"]["job_store"] == {
         "status": "ready",
-        "type": "in-memory",
-        "persistent": False,
+        "type": "sqlite",
+        "persistent": True,
     }
     assert ready.json()["status"] == "not_ready"
     audio_generation = ready.json()["dependencies"]["audio_generation"]
-    assert audio_generation["provider"] == "stability"
-    assert audio_generation["required_environment_variable"] == "STABILITY_API_KEY"
     assert ready.json()["dependencies"]["audio_generation"]["credentials_configured"] is False
     assert ready.json()["dependencies"]["audio_generation"]["status"] == "not_configured"
     assert ready.json()["dependencies"]["audio_generation"]["provider_connection"] == "not_checked"
+    assert ready.json()["dependencies"]["authentication"]["status"] == "not_configured"
 
 
 def test_provider_balance_check_uses_backend_key_without_returning_it(monkeypatch) -> None:

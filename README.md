@@ -45,6 +45,15 @@ notepad .env
 
 In the local `backend/.env` file, set `STABILITY_API_KEY` to a **new key created after revoking any key exposed in a screenshot or environment template**. Never paste keys into chat, source code, screenshots, browser fields, API requests, or the frontend `.env`. Provider credentials are backend-environment-only; the provider settings API accepts provider selection but rejects extra fields such as `api_key`. The root `.gitignore` excludes `.env` files. Save the file, then start the API:
 
+Before starting, configure the single-owner login in the ignored `.env` file. Generate a password hash from a hidden prompt, then generate a separate session secret:
+
+```powershell
+python -c "from getpass import getpass; from app.services.auth import create_password_hash; print(create_password_hash(getpass('Password: ')))"
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Set those outputs as `AUTH_PASSWORD_HASH` and `AUTH_SESSION_SECRET`, choose a private `AUTH_USERNAME`, and leave `AUTH_COOKIE_SECURE=false` only for local HTTP development. Do not share or commit the session secret. The app fails closed for generation, job, provider, narration, manifest, and audio endpoints until authentication is correctly configured; `/health` and `/ready` remain public.
+
 ```powershell
 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
@@ -76,12 +85,15 @@ See root [.env.example](./.env.example). It contains placeholders only. Backend 
 - `PROVIDER_TIMEOUT_SECONDS` controls the total start-and-poll timeout (default 300 seconds).
 - `MAX_GENERATED_AUDIO_BYTES` bounds the downloaded audio response (default 100 MB).
 - `MAX_NARRATION_BYTES` bounds raw WAV/MP3 narration uploads (default 50 MB).
+- `AUTH_USERNAME`, `AUTH_PASSWORD_HASH`, and `AUTH_SESSION_SECRET` configure the single-owner account. Passwords use the built-in scrypt hash format; no default user/password exists. Set `AUTH_COOKIE_SECURE=true` when served over HTTPS. Production must use an explicit CORS origin list; wildcard origins disable readiness.
+- `MAX_ACTIVE_GENERATIONS` defaults to one active job and `MAX_GENERATIONS_PER_DAY` defaults to five accepted requests. SQLite-backed per-IP and per-user request limits and the generation quota apply to this single backend instance only; they are not distributed controls.
+- `JOB_DATABASE_PATH` selects the SQLite job/idempotency/rate-limit database (default `backend/incubrix_jobs.sqlite3` when run directly). `AUDIO_STORAGE_DIR` selects the audio/manifests directory. Back up both paths together. Restart persistence is only as durable as the host disk/volume retaining them; this is not a multi-instance or managed-database guarantee.
 - Narration and decoded source audio are limited to 300.5 seconds to bound processing; generated requests are limited to 5–300 seconds.
 - `AUDIO_STORAGE_DIR` is the server-side generated file directory (default `backend/generated_audio`).
 - `ELEVENLABS_MODEL_ID` optionally selects the model for the ElevenLabs adapter.
 - `CORS_ORIGINS` is the JSON list of allowed browser origins; set it to the exact deployed frontend origin in production.
 - `OUTBOUND_URL_ALLOWED_HOSTS` is a JSON list of exact public HTTPS hostnames permitted for remote narration and webhook URLs. It defaults to `[]`, which rejects remote URLs unless explicitly allowed.
-- `WEBHOOK_SECRET` is needed only when signed completion callbacks are used. `S3_ENDPOINT_URL`, `S3_BUCKET_NAME`, `S3_ACCESS_KEY`, and `S3_SECRET_KEY` enable best-effort S3 mirroring; the local filesystem remains authoritative and the object store is not a production persistence/read path.
+- `WEBHOOK_SECRET` is needed only when signed completion callbacks are used. When all S3 settings are configured, object-store writes are required for a job to succeed; failures produce a failed job and do not report success. API downloads still read the local audio directory, so the object store remains a write mirror, not a recovery/read path. In local Compose, SQLite and audio use named volumes; SeaweedFS keeps its separate object-store volume. No public cloud storage is configured by this project.
 - `APP_NAME`, `ENVIRONMENT`, `MAX_REQUEST_BYTES`, `MAX_IDEMPOTENCY_KEY_LENGTH`, and `S3_REGION` tune application behavior. The frontend's `VITE_API_BASE_URL` is public configuration and must never contain provider credentials.
 
 ### Optional SAM-Audio stem setup
@@ -94,18 +106,24 @@ Commercial permission is not established; have counsel review the [SAM License](
 
 SAM processing is opt-in and disabled by default. It prompts sequentially for drums/percussion, bass, and other instruments, plus a remaining residual track. All tracks are saved as aligned 48 kHz WAVs with the mix channel count (dual-mono for stereo input because the documented model outputs a one-dimensional waveform). The residual can contain missed sources or bleed and is not guaranteed to be an instrument-only stem. The manifest records prompts, model/checkpoint and source revisions, unity gains, measured file properties, license references, and relative reconstruction error against the mono mix. That error is not a perceptual quality score. Joint browser playback starts aligned files together on a best-effort basis; it is not sample-accurate synchronization. No real separation has been run; SAM commercial-use permission and viable access/runtime setup remain unverified. Demucs and Spleeter checkpoint rights are unverified, while Open-Unmix umxl weights are non-commercial. Phase 4 remains incomplete.
 
-`GET /health` reports API process reachability. `GET /ready` reports which provider is selected and whether its credentials are configured, but never returns the key and does not contact the provider. A configured key does not prove Stability is reachable; successful generation is the live integration check.
+`GET /health` reports API process reachability. `GET /ready` reports generic auth, job database, provider-credential, and local storage readiness without returning the provider name, configuration variable names, or secrets. Provider connection and available credits are not checked by readiness.
+
+The frontend signs in through an HTTP-only signed session cookie and sends a CSRF token for state-changing requests. There is no public registration, user-management, or password-reset flow. Rotate `AUTH_SESSION_SECRET` to invalidate all current sessions. Use the frontend and API on a same-site HTTPS origin for production; if they are cross-site, configure `AUTH_COOKIE_SAMESITE=none` together with `AUTH_COOKIE_SECURE=true` and the exact frontend origin.
 
 ## API endpoints
 
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/health` | Process liveness. |
-| `GET` | `/ready` | In-memory store and configured provider readiness. |
+| `GET` | `/ready` | Generic auth, persistent job database, provider-credential, and storage readiness. |
+| `GET` | `/api/v1/auth/csrf` | Obtain a CSRF token before sign-in. |
+| `POST` | `/api/v1/auth/login` | Sign in and receive an HTTP-only session cookie. |
+| `GET` | `/api/v1/auth/me` | Return the signed-in single-owner account. |
+| `POST` | `/api/v1/auth/logout` | End the current browser session. |
 | `GET` | `/api/v1/provider` | Return selected provider/configuration status without returning credentials. |
 | `POST` | `/api/v1/provider` | Select a provider; credentials must be configured in the backend environment. |
 | `POST` | `/api/v1/music/jobs` | Validate and enqueue a request (`202`). |
-| `GET` | `/api/v1/jobs?limit=50` | List up to 100 recent jobs from the current in-memory store. |
+| `GET` | `/api/v1/jobs?limit=50` | List up to 100 recent jobs belonging to the signed-in owner. |
 | `GET` | `/api/v1/jobs/{job_id}` | Get state, error/warnings, and actual audio metadata after success. |
 | `GET` | `/api/v1/jobs/{job_id}/audio` | Download audio only if generation, validation, and storage succeeded. |
 | `GET` | `/api/v1/jobs/{job_id}/stems/{stem_id}` | Download a validated experimental stem WAV (`percussion`, `bass`, `other`, or `remaining`). |
@@ -118,18 +136,11 @@ SAM processing is opt-in and disabled by default. It prompts sequentially for dr
 
 ### Submit a real job
 
-This command submits a paid Stability AI generation request. Run it only after confirming the replacement API key is configured, checking available credits, and explicitly deciding to spend them.
+This operation submits a paid Stability AI generation request. Use the signed-in UI or an API client that retains the session cookie and sends the CSRF token. Run it only after confirming the replacement API key is configured, checking available credits, and explicitly deciding to spend them.
 
 The service requests WAV from Stability and performs the requested processing locally. Use MP3 as the requested output format only after installing an FFmpeg build with `libmp3lame`; the backend checks this prerequisite before making any provider request. Output duration is processed to the requested duration and measured, and the final sample rate, integrated LUFS, and oversampled true peak are measured from the encoded file.
 
-```powershell
-curl.exe -X POST http://127.0.0.1:8000/api/v1/music/jobs `
-  -H "Content-Type: application/json" `
-  -H "Idempotency-Key: my-generation-001" `
-  -d '{"prompt":"Warm optimistic acoustic instrumental for a product launch","duration_s":45,"sections":[{"start_s":0,"mood":"calm intro"},{"start_s":15,"mood":"build-up"}],"tempo_bpm":100,"key":"C","loopable":false,"separate_stems":false,"output":{"sample_rate":48000,"target_lufs":-16,"formats":["wav"]}}'
-```
-
-The initial response is `queued`; the provider may take time. Poll the returned job ID using `GET /api/v1/jobs/{job_id}`. A successful result includes fields like:
+API callers must first request `/api/v1/auth/csrf`, post their username and password to `/api/v1/auth/login` with that CSRF header while retaining the session cookie, then use the returned CSRF token for the generation POST. This sign-in sequence is shown in the UI; no unauthenticated `curl` request is provided. The initial job response is `queued`; poll its ID using `GET /api/v1/jobs/{job_id}` with the same session. The following response is illustrative only, not a measured live generation:
 
 ```json
 {

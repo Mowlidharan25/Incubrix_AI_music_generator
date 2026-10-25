@@ -69,7 +69,7 @@ Docker could not be tested because the Docker executable is not installed in thi
 |---|---|---|
 | Frontend API base URL and CORS | **PASS (local)** | Frontend uses `http://127.0.0.1:8000`; backend defaults allow `http://localhost:5173` and `http://127.0.0.1:5173`. Browser API requests from the audit Vite origin `http://127.0.0.1:5175` succeeded after that origin was explicitly allowed; the first attempt correctly failed CORS before the test server was restarted with the origin. Set and verify the exact deployed origin before production. |
 | Backend starts and displayed API endpoints exist | **PASS (local)** | Started a fresh FastAPI process with the mock provider. Frontend client paths correspond to implemented routes. The live schema contains 11 paths, including provider configuration, job create/list/status, audio, stems, manifest, narration, health, and readiness. |
-| Health and readiness | **PARTIAL** | `/health` returned `200 {"status":"ok"}`. `/ready` returned HTTP 200 and `ready` in the mock process. The readiness implementation checks in-memory store state and provider credential configuration; `provider_connection` remains `not_checked`, so the response does not prove account credits or generation availability. The UI no longer presents this as “Engine Ready.” |
+| Health and readiness | **PARTIAL** | `/health` remains process liveness. `/ready` now checks SQLite, local/object-store storage configuration, auth configuration, and whether provider credentials are configured; it does not contact the music provider or prove account credits. Docker health/readiness and production HTTPS behavior remain unverified. |
 | Submit → poll → manifest → audio playback/download lifecycle | **PASS (mock only)** | Live HTTP lifecycle returned 202, reached `succeeded`, and returned 200 for both manifest and WAV. A 7.25-second fixture measured 7.250000 seconds, 48 kHz, −16.000 LUFS, and −15.054 dBTP. |
 | Documented JSON errors | **PASS** | Live invalid-prompt request returned HTTP 422 with `error.code = INVALID_REQUEST` and an `X-Correlation-Id`. Backend tests cover additional validation, missing-job, and provider errors. |
 | Idempotency-Key | **PASS** | Repeating an identical live mock request with one key returned the same job ID. Tests also cover conflicting payloads, normalized defaults, and concurrent requests sharing a key. |
@@ -104,7 +104,7 @@ Docker could not be tested because the Docker executable is not installed in thi
 | OpenAPI documents vs running FastAPI | **PASS** | Both `openapi.yaml` and `docs/openapi.yaml` were regenerated from `app.openapi()` and compared structurally to the running `/openapi.json`; all 11 paths, methods, operations, and component schemas match. |
 | Environment-driven configuration / `.env.example` | **PARTIAL** | Pydantic settings load environment configuration, including local CORS/storage settings and the empty-by-default `OUTBOUND_URL_ALLOWED_HOSTS` allowlist. Provider-key, webhook-secret, and S3 sample credentials are blank/removed. Configure production secrets/origins/storage explicitly; webhook callbacks are intentionally skipped without `WEBHOOK_SECRET`. |
 | Structured logs and correlation IDs | **PASS** | Backend emits JSON request logs with route, status, duration, job ID, and correlation ID; correlation IDs are returned in response headers. Tests and live HTTP validation passed. |
-| Audio output storage and manifests | **PARTIAL** | Local audio and manifests are atomically written and read back; lifecycle and batch tests downloaded both. Job state is in-memory and lost on restart. Optional S3 mirroring is best-effort and failures are logged, so durable output/history and storage-failure policy need production design and testing. |
+| Audio output storage and manifests | **PARTIAL** | SQLite job/idempotency/rate-limit state and audio/manifests are persisted locally; restart/retrieval tests passed. Compose now declares separate backend-data and audio-data named volumes. When configured, S3 writes are required for job success and cleanup errors are logged; the API still reads local files and has no S3 recovery/read path. Docker volume persistence was not executed. |
 | Batch runner | **PASS (mock only)** | Ran `scripts/batch_runner.py` with `test_pack/inputs/demo_run.json`: 1/1 succeeded, downloaded WAV and manifest, and recorded measured values. |
 | Secrets not committed/exposed | **PARTIAL / unresolved** | A credential-shaped value previously found in `.env.example` was removed and the webhook-secret default removed. The scan of non-secret workspace source found no credential-shaped token matches; `.env` was not scanned or disclosed. Rotate the former provider value if genuine. There is no `.git` metadata, so tracked status/history and whether secrets are committed cannot be verified. The API has no authentication; provider configuration and job endpoints must not be exposed publicly as-is. |
 | MP3 support | **FAIL / unavailable here** | `ffmpeg` is not installed; the MP3 encoder test was skipped. MP3 output requires FFmpeg with `libmp3lame`; install an appropriately licensed build in the target image and run encoding/decoding tests there. |
@@ -207,9 +207,9 @@ The test-only `RUN_STABILITY_INTEGRATION_TEST=1` explicitly enables a paid Stabi
 | Stability is primary; ElevenLabs remains optional | **PASS (configuration)** | Stability remains the default. ElevenLabs needs its key only if explicitly selected. Neither provider was called during validation. |
 | Real provider connectivity, billing, and generation | **NOT TESTED** | No paid calls were made. Replace/revoke the exposed key before any live test; confirm provider credits independently. |
 | S3 object storage as local Compose dependency | **PARTIAL** | Compose expects the two root local S3 variables and defines SeaweedFS persistence. Docker is unavailable here, so Compose parsing/build/startup and object operations were not verified. |
-| Production audio persistence | **FAIL / BLOCKING** | Local disk is authoritative; S3 is best-effort write mirroring and the app does not read files back from S3. In-memory jobs/idempotency disappear on restart. A production database/queue plus durable read/write storage is required; no production storage endpoint or credentials were invented or configured. |
+| Production audio persistence | **FAIL / BLOCKING** | Local SQLite and local audio survive only when their host paths/volumes are retained. The restart test verifies a local filesystem, not a host failure, ephemeral hosting, backups, or multi-instance operation. S3 is not a read/recovery path and no production object store, database, queue, or cloud resource is configured. |
 | CORS and request bounds | **PARTIAL** | Local origins and bounded body sizes are configured. Production origin must be explicitly configured. There are no rate limits, quotas, tenant isolation, or API authentication. |
-| Public deployment security | **FAIL / BLOCKING** | Do not expose the API publicly until authentication/authorization, rate limits/quotas, tenant isolation, durable jobs/storage, and production operational controls are implemented and tested. |
+| Public deployment security | **FAIL / BLOCKING** | Single-owner signed-cookie auth, CSRF checks, owner-scoped job/audio access, SQLite-backed request limits/quotas, bounded body sizes, and a one-active-job default are implemented and covered by tests. Controls are single-host only; production TLS/cookie/CORS configuration, proxy behavior, distributed controls, backup/retention policy, and live deployment checks remain unverified. Do not expose publicly. |
 | GitHub tracked-secret/history audit | **NOT TESTED** | Local workspace has no Git repository; remote repository is empty, so neither tracked status nor commit history exists to scan. |
 | Public GitHub push readiness | **PARTIAL** | No files were staged, committed, or pushed. Before initializing/pushing, rotate the exposed provider key and verify `.env` files are ignored and absent from the index. |
 
@@ -251,3 +251,109 @@ No `.env` file or dependency manifest was modified.
 6. Only after key rotation and explicit approval, test a real provider request and the required audio/stem criteria. Do not automatically retry failed paid jobs.
 
 **Deployment remains blocked. No public deployment, GitHub push, paid API call, or local-secret modification was performed.**
+
+## Hosting deployment assessment — 2026-10-25
+
+This section supersedes the earlier statements in this report that local Git metadata and the remote repository were unavailable/empty. It reflects the present workspace and was verified after the repository was initialized and pushed. No hosting account, service, storage bucket, public URL, or deployment was created.
+
+### Current repository and secret check
+
+- Local repository root: `C:\Incubrix_music_problem`; branch `main`; worktree clean at audit start.
+- `origin` points to `https://github.com/Mowlidharan25/Incubrix_AI_music_generator.git`.
+- Local `HEAD` and GitHub `main` both resolved to `b42f1110e2e93d352f401f0ed56587ccc3ecdef0`. No pull, push, or commit was made during this deployment assessment.
+- The repository contains 74 tracked files. A safe scan of tracked text found no credential-shaped strings and no tracked non-example `.env` files. `git check-ignore` confirmed root `.env`, `backend/.env`, and `frontend/.env` are ignored. `.env.example` files are tracked by design and contain placeholders.
+- These checks cover current tracked files and the current remote head, not credentials in external screenshots or any future local changes. Rotate the previously exposed Stability key regardless of the scan result.
+
+### Application deployment shape
+
+- **Frontend:** React/Vite static site. Production build is `npm ci && npm run build`; output directory is `frontend/dist`. `VITE_API_BASE_URL` is compiled into client JavaScript and must be the public HTTPS API origin. It is public configuration, never a place for provider credentials. The current fallback `http://127.0.0.1:8000` is for local development only and is invalid for public clients.
+- **Backend:** FastAPI under `backend/`, Docker build context `backend/`, health endpoint `/health`; production must run Uvicorn without `--reload`, bind to `0.0.0.0`, and honor the hosting platform's injected port. Configure `CORS_ORIGINS` to the exact HTTPS frontend origin. Keep `STABILITY_API_KEY` and optional `ELEVENLABS_API_KEY` only in backend secret settings.
+- **Local object store:** Compose uses digest-pinned SeaweedFS and local S3 credentials from the root `.env`; the development Compose stack binds service ports to loopback and starts Vite's dev server. It is not a production deployment definition. Docker CLI is unavailable in this workspace, so no Compose/build/container health claim is made.
+- **Provider:** Stability remains the default; no live provider request or credit check was made during this deployment assessment. ElevenLabs is optional only when explicitly selected. A valid key is not proof of provider balance/availability.
+- **Persistence (updated below):** The application now uses SQLite for authoritative job/idempotency/rate-limit state and local files for audio/manifests. Both require the same retained host/volume across restart; SQLite is single-host, work remains in-process, and S3 has no read/recovery path. See the implementation/results section below.
+- **Critical security blockers (updated below):** the initial unauthenticated routes have been protected for a single owner, with owner scoping and local rate/quota controls. The private-instance design is not a distributed or production identity system. Keep public deployment blocked until the remaining controls and persistence limitations below are addressed.
+
+### Free-tier-aware target plan (not configured or deployed)
+
+1. **Frontend candidate — Cloudflare Pages static hosting.** Official Pages build settings list React (Vite) as `npm run build` with output `dist`; for this repository set the project root to `frontend`. Set the public `VITE_API_BASE_URL` to the eventual backend HTTPS origin at build time and redeploy the frontend whenever that value changes. Pages has a free offering, but a public Pages deployment is still a public product and must wait for the security gate. Official setup: [Cloudflare Pages build configuration](https://developers.cloudflare.com/pages/configuration/build-configuration/).
+2. **Backend candidate — container-capable managed web service.** Render documents a free web-service plan suitable for testing/hobby use, but explicitly says free instances are not for production: they spin down after idle time and have ephemeral filesystems; free PostgreSQL expires after 30 days. Therefore a free Render backend is not an acceptable production home for this audio service. For a real launch, select a paid always-on backend plan only after approval, configure a persistent worker/job solution and health check `/health`, and confirm timeouts/resource limits for long generations. Official limitations: [Render free services](https://render.com/docs/free).
+3. **Audio object storage candidate — Cloudflare R2.** Official R2 documentation currently lists a Standard free allowance of 10 GB-month storage, 1 million Class A operations, 10 million Class B operations, and free egress; usage beyond that can incur charges. This may reduce cost for an early workload, but it is not a guaranteed permanently free unlimited tier. The project is not ready to use R2 as its source of truth: implement and test an object-store read path, durable metadata/job storage, object access authorization or short-lived signed URLs, retention/deletion, and recovery behavior first. Do not create a bucket or add billing until the owner explicitly approves. Official docs: [R2 pricing](https://developers.cloudflare.com/r2/pricing/) and [R2 boto3 configuration](https://developers.cloudflare.com/r2/examples/aws/boto3/).
+4. **Persistent job store:** SQLite persistence is now implemented for a single host, but a durable worker queue and managed/replicated database are not. Do not scale to multiple instances or use ephemeral disks; both exceed the approved local-only/₹0 scope.
+5. **Deployment order after the gate:** implement and test authentication/authorization, rate limits/quotas and user isolation; durable jobs and object reads/writes; provider secret injection and key rotation; production CORS; storage lifecycle/backups; observability and health/readiness semantics; then perform a private staging deployment and verify real health, persistence across restart, billing/error paths, and audio download. Only then request explicit approval for a public deployment.
+
+### Required owner dashboard actions
+
+**Do not perform a public deploy yet.** No dashboard actions are required before the blockers are fixed.
+
+After security and persistence work is complete, and after you approve any service that may bill:
+
+- In the frontend host dashboard, connect the `main` branch, choose `frontend` as the root directory, set build command `npm ci && npm run build`, output `dist`, and set the public `VITE_API_BASE_URL` to the actual backend HTTPS URL. The backend URL does not exist yet and must not be guessed.
+- In the backend host dashboard, create the web service only after approval, configure a production start command that binds to the platform port (for example `uvicorn app.main:app --host 0.0.0.0 --port $PORT` if the platform provides `PORT`), health path `/health`, exact `CORS_ORIGINS`, and backend-only secrets. Do not paste keys into source code, frontend variables, chat, or logs.
+- In the object-storage dashboard, create a private bucket and scoped access credentials only after approval of the provider, retention, and billing policy. Use the actual endpoint/account details shown by that dashboard; do not use example endpoints or commit credentials.
+- Verify the final service URL, TLS, health checks, CORS preflight, authenticated API requests, rate limiting, object retrieval after backend restart, and job polling before considering the service usable.
+
+### Exact next step
+
+In VS Code, do not click Deploy or push additional commits. First approve a target architecture and cost boundary: (a) private static preview only, or (b) production backend plus durable database/queue and object storage, with a monthly spend ceiling. The current report does not establish a safe public deployment. Once that choice is made, implement the security and persistence gates before creating hosting resources.
+
+## Single-owner security and local persistence implementation - 2026-10-25
+
+This section supersedes older in-memory/no-auth findings above. The user approved a private single-owner instance using SQLite and local audio volumes. No external service, bucket, database, account, paid API, public deployment, commit, or push was created.
+
+### Phase 1 findings before implementation
+
+- All provider, generation, job, manifest, audio, stem, and narration routes under `/api/v1` lacked authentication and job-owner checks. A caller with a job ID could retrieve job status and media.
+- `InMemoryJobStore` held status and idempotency keys only in process memory. Restart lost jobs; generation work ran in-process and had no durable queue or retry recovery.
+- Audio and manifests were atomically saved locally. S3 was a write mirror and not a read/recovery path; storage code attempted bucket creation when `head_bucket` failed.
+- Existing request validation and body/narration size limits were present, but API rate limits, generation quotas, and active-job limits were not.
+- `/health` was safe liveness. `/ready` exposed provider-selection details and checked only in-memory state/configuration, not database, audio-storage, or authentication readiness.
+- Compose had no persistent backend database/audio volumes. There was no user-facing delete route; cleanup was internal to failed generation/narration processing.
+
+### Changes implemented
+
+- Added a single-owner sign-in flow with a scrypt password hash, signed HTTP-only session cookie, rotating CSRF token, login-attempt IP throttling, and fail-closed behavior when credentials/session secret are absent or malformed. No administrator password or credentials are hardcoded. API errors do not expose stack traces.
+- Protected all `/api/v1` provider/job/audio/narration endpoints. Job create, list, status, audio, stems, manifests, and narration operations are scoped to the authenticated username. OpenAPI now documents the cookie security scheme.
+- Replaced authoritative in-memory jobs/idempotency with transactional SQLite. Owner-scoped idempotency keys, status/progress/result/error/warnings, rate-limit counters, daily quota checks, and active-job checks are persisted. Startup changes queued/running jobs to a visible `JOB_INTERRUPTED` failure and never retries a possibly chargeable request.
+- Added SQLite-backed per-IP and per-owner fixed-window limits, configurable daily generation quota (default 5 accepted jobs/day), and one active generation per owner by default. Limits fail closed on database errors. These controls do not provide distributed protection and must not be used across multiple instances.
+- Kept local audio/manifests as the read source and added named `backend_data` and `audio_data` volumes to Compose. When S3 is configured, storage writes now fail the job instead of silently succeeding on a failed mirror; S3 deletes are attempted during cleanup and logged explicitly. Bucket auto-creation was removed from backend startup. There remains no S3 read/recovery path.
+- Updated readiness to check SQLite, local/object storage, auth configuration, and configured provider credentials without exposing the provider name or environment-variable names. It still does not check provider connectivity or credits.
+- Added an authenticated frontend sign-in/sign-out gate, credentialed API requests, CSRF headers, and credentialed audio playback. Added auth, ownership, restart/retrieval, rate, quota, concurrency, and storage-outage tests.
+- Added `itsdangerous` as an explicit session dependency; updated `.env.example`, README, architecture documentation, Compose persistence volumes, and both generated OpenAPI documents. Existing `.env` files and values were not edited.
+
+### Requirement status after the changes
+
+| Requirement | Status | Evidence / remaining limit |
+|---|---|---|
+| Missing/invalid authentication and CSRF | **PASS (tests)** | Missing auth returns a structured 503 until configured; invalid session/password and missing CSRF are rejected; session cookie is HTTP-only. Production HTTPS behavior still needs live validation. |
+| Cross-owner job/audio/manifest isolation | **PASS (tests)** | A second owner receives 404 for job status, audio, and manifest; the authorized owner can retrieve the same outputs. |
+| Rate limit, quota, concurrency | **PASS (single host)** | SQLite limits and quota/concurrency tests pass; the API emits 429 and `Retry-After`. Reverse-proxy IP attribution and distributed limits are not implemented. |
+| Input/body/file bounds | **PASS (automated tests)** | Existing schema constraints and request/narration byte limits remain in place; backend suite passes. |
+| CORS and session security | **PARTIAL** | Explicit origins, CSRF, secure-cookie production readiness checks, and CORS CSRF header are configured. No browser cross-origin/HTTPS production deployment was available to test. |
+| Job state/idempotency after process restart | **PASS (local SQLite test)** | Reopened SQLite retains completed job/idempotency records; interrupted active jobs are marked failed without automatic retry. |
+| Audio/manifest retrieval after restart | **PASS (local filesystem test)** | A reopened store and storage instance retrieved a completed WAV and manifest. This proves same-filesystem restart persistence only, not host failure or ephemeral-host durability. |
+| Object-store outage / partial output | **PASS (deterministic test)** | Simulated S3 upload failure leaves the job failed without result metadata and cleans local source/output/manifest; actual SeaweedFS/Docker outage was not tested. |
+| Audio object-store recovery/read/delete | **PARTIAL** | S3 writes are no longer success-shaped on failure, and cleanup attempts remote deletes. The application still reads from local disk and has no S3 restoration path; no user-facing job DELETE route exists. |
+| Docker Compose volumes/startup/health | **NOT TESTED** | `docker compose config --quiet` could not run because Docker is not installed. Build, startup, health, and actual volume-restart tests were not run. |
+| Paid provider integration / commercial generation | **NOT TESTED** | Tests use mock/fake responses; no live provider request or credit was used. The previous exposed Stability key still needs revocation and replacement by the account owner. |
+| Public deployment readiness | **FAIL / BLOCKING** | Local single-owner SQLite/filesystem is not multi-instance or backup-safe; there is no durable queue, object-store read path, production deployment verification, or distributed rate limiting. Do not deploy publicly. |
+
+### Validation actually executed
+
+- `Set-Location backend; $env:PYTHONPATH = "$PWD;.."; python -m pytest -q --basetemp D:\Incubrix_pytest_backend_final4` - **130 passed, 2 skipped**. Tests used mock/fake providers; no paid request was made.
+- `Set-Location frontend; npm ci` - **passed**, 54 packages installed; npm reported zero vulnerabilities.
+- `Set-Location frontend; npm run lint` - **passed**.
+- `Set-Location frontend; npm run build` - **passed** (`tsc -b` and Vite production build).
+- FastAPI `/openapi.json` was fetched with `TestClient`; `openapi.yaml` and `docs/openapi.yaml` were generated from and structurally compared against it - **15 paths match**, including cookie authentication.
+- Pylance syntax checks for `auth.py`, `job_store.py`, `routes.py`, and `main.py` - **no syntax errors**; diagnostics for changed backend/auth and frontend `App.tsx` returned no items. Signature compatibility for `SQLiteJobStore.create` found all five call sites compatible.
+- `git diff --check` - **passed**; Git emitted only LF-to-CRLF normalization warnings for `frontend/src/App.css` and `frontend/src/App.tsx`.
+- `git check-ignore -v .env backend/.env frontend/.env` - all three matched `.gitignore`; `git ls-files -- .env backend/.env frontend/.env` returned no tracked secret files. Tracked-file credential-shape scan found no credential after reducing the `.env.example` S3 entries to explicit short placeholders. `git status --short` lists only the implementation/docs files changed here; nothing was staged or committed.
+- `docker compose config --quiet` - **not run successfully**: PowerShell reported `docker` is not recognized. Docker build/up/status and container health are unverified.
+- An initial pytest attempt used the nearly-full C: temporary directory and failed with disk I/O/no-space errors; its known pytest-only temporary directories were removed. The final complete suite was rerun on D: and passed. A first full-suite collection attempt from `backend` also lacked the repository root on `PYTHONPATH`; the final command above includes it.
+
+### Remaining blockers and exact next actions
+
+1. Revoke the Stability key previously exposed in the screenshot and provision its replacement only in a private backend environment if/when live paid generation is explicitly approved. Do not use it for the current verification.
+2. Generate a unique `AUTH_PASSWORD_HASH` through the hidden password prompt and a high-entropy `AUTH_SESSION_SECRET`; put them in the ignored local environment file. Keep `.env.example` placeholders unchanged. Production additionally needs HTTPS, `AUTH_COOKIE_SECURE=true`, the exact frontend CORS origin, and a reviewed same-site cookie policy.
+3. Install/enable Docker Desktop, then run `docker compose config --quiet`, `docker compose build`, and `docker compose up -d` only when the operator wants to start the **local** stack. Verify `docker compose ps`, `/health`, `/ready`, authenticated job/media access, and restart retrieval before relying on the named volumes. Do not delete volumes.
+4. Before any public deployment, choose an approved durable metadata/queue and audio-recovery design. Do not put this local SQLite/in-process-work setup on ephemeral or multi-instance hosting; add tested object-store reads, retention/backups, distributed rate limiting, and operational controls first.
+5. No full browser E2E or real provider/audio-model acceptance was run. The frontend was linted/built, and API auth/lifecycle tests passed, but production TLS/CORS, actual object-store persistence, and provider behavior remain unverified.

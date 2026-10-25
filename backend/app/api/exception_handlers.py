@@ -55,7 +55,9 @@ async def http_exception_handler(_: Request, exc: StarletteHTTPException) -> JSO
         details = exc.detail.get("details", {})
     else:
         code, message, retryable, details = "HTTP_ERROR", str(exc.detail), False, {}
-    return error_response(exc.status_code, code, message, retryable, details)
+    response = error_response(exc.status_code, code, message, retryable, details)
+    response.headers.update(exc.headers or {})
+    return response
 
 
 async def internal_exception_handler(_: Request, exc: Exception) -> JSONResponse:

@@ -26,6 +26,10 @@ class AudioValidationError(Exception):
     pass
 
 
+class AudioStorageError(OSError):
+    pass
+
+
 def inspect_audio(content: bytes, expected_format: str) -> AudioMetadata:
     return _audio_metadata(content, expected_format)
 
@@ -73,6 +77,7 @@ class AudioStorage:
         self.directory = directory if directory.is_absolute() else backend_root / directory
         self.directory = self.directory.resolve()
         self._s3_client = None
+        self._s3_required = bool(settings.s3_endpoint_url or settings.s3_bucket_name)
         if settings.s3_endpoint_url and settings.s3_bucket_name:
             if not settings.s3_access_key or not settings.s3_secret_key:
                 logger.error(
@@ -89,23 +94,36 @@ class AudioStorage:
                     aws_access_key_id=settings.s3_access_key,
                     aws_secret_access_key=settings.s3_secret_key,
                     region_name=settings.s3_region or "us-east-1",
-                    config=Config(signature_version="s3v4"),
+                    config=Config(
+                        signature_version="s3v4",
+                        connect_timeout=2,
+                        read_timeout=2,
+                        retries={"max_attempts": 1},
+                    ),
                 )
-                try:
-                    self._s3_client.head_bucket(Bucket=settings.s3_bucket_name)
-                except Exception:
-                    try:
-                        self._s3_client.create_bucket(Bucket=settings.s3_bucket_name)
-                    except Exception as exc:
-                        logger.warning(
-                            "S3 bucket initialization failed",
-                            extra={"failure_type": type(exc).__name__},
-                        )
             except Exception as exc:
                 logger.warning(
                     "Could not initialize S3/MinIO client",
                     extra={"failure_type": type(exc).__name__},
                 )
+
+    def check_ready(self) -> bool:
+        if self._s3_required:
+            if self._s3_client is None or not settings.s3_bucket_name:
+                return False
+            try:
+                self._s3_client.head_bucket(Bucket=settings.s3_bucket_name)
+                return True
+            except Exception as exc:
+                logger.warning(
+                    "Configured object storage readiness check failed",
+                    extra={"failure_type": type(exc).__name__},
+                )
+                return False
+        directory = self.directory
+        while not directory.exists() and directory != directory.parent:
+            directory = directory.parent
+        return directory.is_dir() and os.access(directory, os.W_OK)
 
     def _mirror_to_s3(self, key: str, path: Path, content_type: str = "application/octet-stream") -> None:
         if self._s3_client is not None and settings.s3_bucket_name:
@@ -117,10 +135,17 @@ class AudioStorage:
                     ExtraArgs={"ContentType": content_type},
                 )
             except Exception as exc:
-                logger.warning(
-                    "Failed to upload object to S3/MinIO",
+                logger.exception(
+                    "Configured object storage upload failed",
                     extra={"object_key": key, "failure_type": type(exc).__name__},
                 )
+                raise AudioStorageError(
+                    "Generated audio could not be stored in the configured object store."
+                ) from exc
+        elif self._s3_required:
+            raise AudioStorageError(
+                "Configured object storage is unavailable or missing credentials."
+            )
 
     def save(self, job_id: str, audio_format: str, content: bytes) -> Path:
         if audio_format not in {"mp3", "wav"}:
@@ -138,8 +163,11 @@ class AudioStorage:
     def save_narration_manifest(self, job_id: str, manifest: dict[str, Any]) -> Path:
         return self._save_json_path(self.narration_manifest_path_for(job_id), job_id, manifest)
 
+    def delete_narration_manifest(self, job_id: str) -> None:
+        self._delete_path(self.narration_manifest_path_for(job_id))
+
     def _save_json_path(self, target: Path, job_id: str, manifest: dict[str, Any]) -> Path:
-        self.directory.mkdir(parents=True, exist_ok=True)
+        self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         temporary_path: Path | None = None
         try:
             with tempfile.NamedTemporaryFile(
@@ -163,19 +191,19 @@ class AudioStorage:
         return target
 
     def delete(self, job_id: str, audio_format: str) -> None:
-        self.path_for(job_id, audio_format).unlink(missing_ok=True)
+        self._delete_path(self.path_for(job_id, audio_format))
 
     def delete_manifest(self, job_id: str) -> None:
-        self.manifest_path_for(job_id).unlink(missing_ok=True)
+        self._delete_path(self.manifest_path_for(job_id))
 
     def delete_source(self, job_id: str, audio_format: str) -> None:
-        self.source_path_for(job_id, audio_format).unlink(missing_ok=True)
+        self._delete_path(self.source_path_for(job_id, audio_format))
 
     def save_stem(self, job_id: str, stem_id: str, content: bytes) -> Path:
         return self._save_path(self.stem_path_for(job_id, stem_id), job_id, content)
 
     def delete_stem(self, job_id: str, stem_id: str) -> None:
-        self.stem_path_for(job_id, stem_id).unlink(missing_ok=True)
+        self._delete_path(self.stem_path_for(job_id, stem_id))
 
     def save_variant(self, job_id: str, variant: str, audio_format: str, content: bytes) -> Path:
         if variant != "narration-mix" or audio_format not in {"mp3", "wav"}:
@@ -183,7 +211,7 @@ class AudioStorage:
         return self._save_path(self.variant_path_for(job_id, variant, audio_format), job_id, content)
 
     def delete_variant(self, job_id: str, variant: str, audio_format: str) -> None:
-        self.variant_path_for(job_id, variant, audio_format).unlink(missing_ok=True)
+        self._delete_path(self.variant_path_for(job_id, variant, audio_format))
 
     def variant_path_for(self, job_id: str, variant: str, audio_format: str) -> Path:
         if variant != "narration-mix" or audio_format not in {"mp3", "wav"}:
@@ -218,7 +246,7 @@ class AudioStorage:
         return self._validated_path(f"{job_id}.{audio_format}")
 
     def _save_path(self, target: Path, job_id: str, content: bytes) -> Path:
-        self.directory.mkdir(parents=True, exist_ok=True)
+        self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         temporary_path: Path | None = None
         try:
             with tempfile.NamedTemporaryFile(
@@ -239,6 +267,24 @@ class AudioStorage:
             if temporary_path is not None and temporary_path.exists():
                 temporary_path.unlink()
         return target
+
+    def _delete_path(self, target: Path) -> None:
+        target.unlink(missing_ok=True)
+        if self._s3_client is not None and settings.s3_bucket_name:
+            try:
+                self._s3_client.delete_object(Bucket=settings.s3_bucket_name, Key=target.name)
+            except Exception as exc:
+                logger.exception(
+                    "Configured object storage cleanup failed",
+                    extra={"object_key": target.name, "failure_type": type(exc).__name__},
+                )
+                raise AudioStorageError(
+                    "A stored object could not be removed from the configured object store."
+                ) from exc
+        elif self._s3_required:
+            raise AudioStorageError(
+                "Configured object storage is unavailable or missing credentials."
+            )
 
     def _validated_path(self, filename: str) -> Path:
         path = (self.directory / filename).resolve()

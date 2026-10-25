@@ -5,7 +5,7 @@ import logging
 from typing import Any, Literal
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, status
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict
 
@@ -14,11 +14,18 @@ from app.schemas.music import JobAccepted, JobCreateRequest, JobResponse, Narrat
 from app.services.audio_processing import AudioProcessingError, mix_with_narration
 from app.services.audio_storage import AudioStorage, AudioValidationError, inspect_audio_file
 from app.services.job_manager import JobManager, create_music_provider
-from app.services.job_store import IdempotencyConflict, JobRecord, job_store
+from app.services.auth import enforce_api_request
+from app.services.job_store import (
+    GenerationConcurrencyExceeded,
+    GenerationQuotaExceeded,
+    IdempotencyConflict,
+    JobRecord,
+    job_store,
+)
 from app.services.outbound_url import validate_outbound_url
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(enforce_api_request)])
 audio_storage = AudioStorage(settings.audio_storage_dir)
 job_manager = JobManager(job_store, create_music_provider(settings), audio_storage)
 NARRATION_CONTENT_TYPES = {
@@ -101,7 +108,7 @@ def serialize_job(job: JobRecord) -> JobResponse:
 
 
 @router.get("/jobs", response_model=list[JobResponse], operation_id="listRecentJobs")
-def list_jobs(limit: int = 50) -> list[JobResponse]:
+def list_jobs(request: Request, limit: int = 50) -> list[JobResponse]:
     if not 1 <= limit <= 100:
         raise HTTPException(
             status_code=422,
@@ -111,12 +118,12 @@ def list_jobs(limit: int = 50) -> list[JobResponse]:
                 "details": {"minimum": 1, "maximum": 100},
             },
         )
-    return [serialize_job(job) for job in job_store.list_recent(limit)]
+    return [serialize_job(job) for job in job_store.list_recent(limit, request.state.user_id)]
 
 
 @router.get("/jobs/{job_id}", response_model=JobResponse, operation_id="getJobStatus")
-def get_job(job_id: str) -> JobResponse:
-    job = job_store.get(job_id)
+def get_job(job_id: str, request: Request) -> JobResponse:
+    job = job_store.get(job_id, request.state.user_id)
     if job is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -130,8 +137,8 @@ def get_job(job_id: str) -> JobResponse:
 
 
 @router.get("/jobs/{job_id}/audio", operation_id="downloadJobAudio")
-def download_job_audio(job_id: str) -> FileResponse:
-    job = job_store.get(job_id)
+def download_job_audio(job_id: str, request: Request) -> FileResponse:
+    job = job_store.get(job_id, request.state.user_id)
     if job is None:
         raise HTTPException(
             status_code=404,
@@ -175,8 +182,8 @@ def download_job_audio(job_id: str) -> FileResponse:
 
 
 @router.get("/jobs/{job_id}/stems/{stem_id}", operation_id="downloadJobStem")
-def download_job_stem(job_id: str, stem_id: str) -> FileResponse:
-    job = job_store.get(job_id)
+def download_job_stem(job_id: str, stem_id: str, request: Request) -> FileResponse:
+    job = job_store.get(job_id, request.state.user_id)
     if job is None:
         raise HTTPException(
             status_code=404,
@@ -224,8 +231,8 @@ def download_job_stem(job_id: str, stem_id: str) -> FileResponse:
 
 
 @router.get("/jobs/{job_id}/manifest", operation_id="getJobManifest")
-def get_job_manifest(job_id: str) -> JSONResponse:
-    job = job_store.get(job_id)
+def get_job_manifest(job_id: str, request: Request) -> JSONResponse:
+    job = job_store.get(job_id, request.state.user_id)
     if job is None:
         raise HTTPException(
             status_code=404,
@@ -284,7 +291,7 @@ def get_job_manifest(job_id: str) -> JSONResponse:
     operation_id="createNarrationMix",
 )
 async def create_narration_mix(job_id: str, request: Request) -> NarrationMixResponse:
-    job = job_store.get(job_id)
+    job = job_store.get(job_id, request.state.user_id)
     if job is None:
         raise HTTPException(
             status_code=404,
@@ -368,13 +375,13 @@ async def create_narration_mix(job_id: str, request: Request) -> NarrationMixRes
             target_lufs=job.request.output.target_lufs,
             output_format=job.result.format,
         )
+        saved_format = processed.format
         output_path = audio_storage.save_variant(
             job_id,
             "narration-mix",
             processed.format,
             processed.content,
         )
-        saved_format = processed.format
         saved_metadata = inspect_audio_file(output_path, processed.format)
         if (
             abs(saved_metadata.duration_s - processed.duration_s) > 0.05
@@ -435,7 +442,7 @@ def _cleanup_narration_mix(job_id: str, audio_format: str | None) -> None:
     try:
         if audio_format is not None:
             audio_storage.delete_variant(job_id, "narration-mix", audio_format)
-        audio_storage.narration_manifest_path_for(job_id).unlink(missing_ok=True)
+        audio_storage.delete_narration_manifest(job_id)
     except OSError:
         logger.exception("Failed to clean narration mix assets", extra={"job_id": job_id})
 
@@ -445,8 +452,8 @@ def _cleanup_narration_mix(job_id: str, audio_format: str | None) -> None:
     response_model=NarrationMixResponse,
     operation_id="getNarrationMix",
 )
-def get_narration_mix(job_id: str) -> NarrationMixResponse:
-    job = job_store.get(job_id)
+def get_narration_mix(job_id: str, request: Request) -> NarrationMixResponse:
+    job = job_store.get(job_id, request.state.user_id)
     if job is None:
         raise HTTPException(
             status_code=404,
@@ -469,8 +476,8 @@ def get_narration_mix(job_id: str) -> NarrationMixResponse:
 
 
 @router.get("/jobs/{job_id}/narration/audio", operation_id="downloadNarrationMix")
-def download_narration_mix(job_id: str) -> FileResponse:
-    job = job_store.get(job_id)
+def download_narration_mix(job_id: str, request: Request) -> FileResponse:
+    job = job_store.get(job_id, request.state.user_id)
     if job is None:
         raise HTTPException(
             status_code=404,
@@ -506,6 +513,7 @@ def download_narration_mix(job_id: str) -> FileResponse:
 )
 def create_music_job(
     payload: JobCreateRequest,
+    request: Request,
     background_tasks: BackgroundTasks,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> JobAccepted:
@@ -538,7 +546,7 @@ def create_music_job(
             )
 
     try:
-        job, created = job_store.create(payload, idempotency_key)
+        job, created = job_store.create(payload, idempotency_key, request.state.user_id)
     except IdempotencyConflict as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -546,6 +554,24 @@ def create_music_job(
                 "code": "IDEMPOTENCY_KEY_CONFLICT",
                 "message": "This Idempotency-Key was already used with a different request.",
             },
+        ) from exc
+    except GenerationQuotaExceeded as exc:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "GENERATION_QUOTA_EXCEEDED",
+                "message": "The configured generation quota has been reached.",
+            },
+            headers={"Retry-After": "3600"},
+        ) from exc
+    except GenerationConcurrencyExceeded as exc:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "GENERATION_CONCURRENCY_LIMIT",
+                "message": "An active generation is already in progress.",
+            },
+            headers={"Retry-After": "30"},
         ) from exc
 
     if created:

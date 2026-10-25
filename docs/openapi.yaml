@@ -3,14 +3,121 @@ info:
   title: IncuBrix AI Music Studio API
   description: Creates music-generation jobs using the configured provider, validates
     and stores generated audio locally, and exposes download links only after success.
-    Job state is in-memory; duration, arrangement, loopability, and mastering targets
-    are reported honestly and are not guaranteed by this API.
+    Jobs use single-host SQLite persistence; duration, arrangement, loopability, and
+    mastering targets are reported honestly and are not guaranteed by this API.
   version: 0.2.0
 paths:
+  /api/v1/auth/csrf:
+    get:
+      summary: Get Csrf Token
+      operationId: get_csrf_token_api_v1_auth_csrf_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                type: object
+                title: Response Get Csrf Token Api V1 Auth Csrf Get
+  /api/v1/auth/login:
+    post:
+      summary: Login
+      operationId: login_api_v1_auth_login_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Login Api V1 Auth Login Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/me:
+    get:
+      summary: Current User
+      operationId: current_user_api_v1_auth_me_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                type: object
+                title: Response Current User Api V1 Auth Me Get
+      security:
+      - APIKeyCookie: []
+  /api/v1/auth/logout:
+    post:
+      summary: Logout
+      operationId: logout_api_v1_auth_logout_post
+      security:
+      - APIKeyCookie: []
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Logout Api V1 Auth Logout Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/provider:
     get:
       summary: Get Provider Config
       operationId: getProviderConfig
+      security:
+      - APIKeyCookie: []
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
       responses:
         '200':
           description: Successful Response
@@ -19,15 +126,32 @@ paths:
               schema:
                 type: object
                 title: Response Getproviderconfig
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
     post:
       summary: Update Provider Config
       operationId: updateProviderConfig
+      security:
+      - APIKeyCookie: []
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/ProviderConfigRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
@@ -46,6 +170,8 @@ paths:
     get:
       summary: List Jobs
       operationId: listRecentJobs
+      security:
+      - APIKeyCookie: []
       parameters:
       - name: limit
         in: query
@@ -54,6 +180,14 @@ paths:
           type: integer
           default: 50
           title: Limit
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
       responses:
         '200':
           description: Successful Response
@@ -74,6 +208,8 @@ paths:
     get:
       summary: Get Job
       operationId: getJobStatus
+      security:
+      - APIKeyCookie: []
       parameters:
       - name: job_id
         in: path
@@ -81,6 +217,14 @@ paths:
         schema:
           type: string
           title: Job Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
       responses:
         '200':
           description: Successful Response
@@ -98,6 +242,8 @@ paths:
     get:
       summary: Download Job Audio
       operationId: downloadJobAudio
+      security:
+      - APIKeyCookie: []
       parameters:
       - name: job_id
         in: path
@@ -105,6 +251,14 @@ paths:
         schema:
           type: string
           title: Job Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
       responses:
         '200':
           description: Successful Response
@@ -121,6 +275,8 @@ paths:
     get:
       summary: Download Job Stem
       operationId: downloadJobStem
+      security:
+      - APIKeyCookie: []
       parameters:
       - name: job_id
         in: path
@@ -134,6 +290,14 @@ paths:
         schema:
           type: string
           title: Stem Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
       responses:
         '200':
           description: Successful Response
@@ -150,6 +314,8 @@ paths:
     get:
       summary: Get Job Manifest
       operationId: getJobManifest
+      security:
+      - APIKeyCookie: []
       parameters:
       - name: job_id
         in: path
@@ -157,6 +323,14 @@ paths:
         schema:
           type: string
           title: Job Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
       responses:
         '200':
           description: Successful Response
@@ -173,6 +347,8 @@ paths:
     post:
       summary: Create Narration Mix
       operationId: createNarrationMix
+      security:
+      - APIKeyCookie: []
       parameters:
       - name: job_id
         in: path
@@ -180,6 +356,14 @@ paths:
         schema:
           type: string
           title: Job Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
       responses:
         '200':
           description: Successful Response
@@ -196,6 +380,8 @@ paths:
     get:
       summary: Get Narration Mix
       operationId: getNarrationMix
+      security:
+      - APIKeyCookie: []
       parameters:
       - name: job_id
         in: path
@@ -203,6 +389,14 @@ paths:
         schema:
           type: string
           title: Job Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
       responses:
         '200':
           description: Successful Response
@@ -220,6 +414,8 @@ paths:
     get:
       summary: Download Narration Mix
       operationId: downloadNarrationMix
+      security:
+      - APIKeyCookie: []
       parameters:
       - name: job_id
         in: path
@@ -227,6 +423,14 @@ paths:
         schema:
           type: string
           title: Job Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
       responses:
         '200':
           description: Successful Response
@@ -243,6 +447,8 @@ paths:
     post:
       summary: Create Music Job
       operationId: createMusicJob
+      security:
+      - APIKeyCookie: []
       parameters:
       - name: Idempotency-Key
         in: header
@@ -252,6 +458,14 @@ paths:
           - type: string
           - type: 'null'
           title: Idempotency-Key
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
       requestBody:
         required: true
         content:
@@ -586,6 +800,24 @@ components:
       - succeeded
       - failed
       title: JobStatus
+    LoginRequest:
+      properties:
+        username:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Username
+        password:
+          type: string
+          maxLength: 1024
+          minLength: 1
+          title: Password
+      additionalProperties: false
+      type: object
+      required:
+      - username
+      - password
+      title: LoginRequest
     LoopValidation:
       properties:
         status:
@@ -853,3 +1085,8 @@ components:
       - msg
       - type
       title: ValidationError
+  securitySchemes:
+    APIKeyCookie:
+      type: apiKey
+      in: cookie
+      name: incubrix_session
